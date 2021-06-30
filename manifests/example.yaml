@@ -1,0 +1,85 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: ci-results
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ci-results
+  template:
+    metadata:
+      labels:
+        app: ci-results
+    spec:
+      containers:
+      - resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 500m
+            memory: 256Mi
+        terminationMessagePath: /dev/termination-log
+        name: backend
+        ports:
+        - containerPort: 8001
+          protocol: TCP
+        imagePullPolicy: Always
+        terminationMessagePolicy: FallbackToLogsOnError
+        image: quay.io/rh-obulatov/ci-results:backend
+        workingDir: /tmp
+      - resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+            scheme: HTTP
+          timeoutSeconds: 1
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        terminationMessagePath: /dev/termination-log
+        name: frontend
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+        imagePullPolicy: Always
+        terminationMessagePolicy: FallbackToLogsOnError
+        image: quay.io/rh-obulatov/ci-results:frontend
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ci-results-frontend
+spec:
+  selector:
+    app: ci-results
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ci-results-backend
+spec:
+  selector:
+    app: ci-results
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8001

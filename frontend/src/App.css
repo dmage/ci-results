@@ -1,0 +1,50 @@
+.filter {
+  text-align: center;
+  margin: 3px;
+}
+
+.filter input {
+  width: 30em;
+}
+
+.app table {
+  margin: 0 auto;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+td {
+  line-height: 1.4em;
+}
+
+td:first-child {
+  padding: 0 0 0 0.5em;
+}
+
+td:last-child {
+  padding: 0 0.5em 0 0;
+}
+
+td.group-start {
+  padding-left: 1em;
+}
+
+td.numeric {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+td.trend {
+  text-align: center;
+}
+
+td.trend-positive { color: green; }
+td.trend-negative { color: red; }
+
+.job-nodata    { background-color: #d6d8db; }
+.job-permafail { background-color: #f5969b; }
+.job-red       { background-color: #f5c6cb; }
+.job-yellow    { background-color: #ffeeba; }
+.job-green     { background-color: #c3e6cb; }
