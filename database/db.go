@@ -148,6 +148,7 @@ func (db *dbImpl) init() error {
 		`create table if not exists jobs (
 			id integer not null primary key,
 			name text not null,
+			dashboard text not null,
 			platform text not null,
 			mod text not null,
 			testtype text not null
@@ -196,7 +197,7 @@ func (db *dbImpl) initStmts() error {
 		return err
 	}
 
-	db.insertJobStmt, err = db.Prepare("insert or ignore into jobs (name, platform, mod, testtype) values (?, ?, ?, ?)")
+	db.insertJobStmt, err = db.Prepare("insert or ignore into jobs (name, dashboard, platform, mod, testtype) values (?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -251,8 +252,8 @@ func (db *dbImpl) FindJob(name string) (id int64, err error) {
 	return id, nil
 }
 
-func (db *dbImpl) InsertJob(name string, tags JobTags) (int64, error) {
-	result, err := db.insertJobStmt.Exec(name, tags.Platform, tags.Mod, tags.TestType)
+func (db *dbImpl) InsertJob(name string, dashboard string, tags JobTags) (int64, error) {
+	result, err := db.insertJobStmt.Exec(name, dashboard, tags.Platform, tags.Mod, tags.TestType)
 	if err != nil {
 		return 0, err
 	}
@@ -452,6 +453,9 @@ func (db *dbImpl) BuildStats(columns string, filter string, periods string) (*St
 		sel = "t.name"
 		statusField = "tr.status"
 		joins += " JOIN test_results tr ON tr.build_id = b.id JOIN tests t ON t.id = tr.test_id"
+	} else if columns == "name,dashboard" {
+		sel = "j.name, j.dashboard"
+		joins = ""
 	}
 	if conds == "" {
 		conds = "WHERE "
@@ -482,24 +486,37 @@ func (db *dbImpl) BuildStats(columns string, filter string, periods string) (*St
 	}
 	for rows.Next() {
 		var tag string
+		var dashboard string
 		var status int
 		var currWeek int
 		var prevWeek int
-		err := rows.Scan(&tag, &status, &currWeek, &prevWeek)
+		scanColumns := []interface{}{&tag}
+		if columns == "name,dashboard" {
+			scanColumns = append(scanColumns, &dashboard)
+		}
+		scanColumns = append(scanColumns, &status, &currWeek, &prevWeek)
+		err := rows.Scan(scanColumns...)
 		if err != nil {
 			return nil, err
 		}
 
-		row, ok := resultsByTag[tag]
+		key := tag
+		columnsValues := []string{tag}
+		if columns == "name,dashboard" {
+			key += "/" + dashboard
+			columnsValues = []string{tag, dashboard}
+		}
+
+		row, ok := resultsByTag[key]
 		if !ok {
 			row = &StatsRow{
-				Columns: []string{tag},
+				Columns: columnsValues,
 				Values: []StatsValues{
 					{}, {},
 				},
 			}
 			results.Data = append(results.Data, row)
-			resultsByTag[tag] = row
+			resultsByTag[key] = row
 		}
 
 		if statusField == "tr.status" {

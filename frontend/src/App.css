@@ -27,21 +27,22 @@ td:last-child {
   padding: 0 0.5em 0 0;
 }
 
-td.group-start {
-  padding-left: 1em;
-}
-
-td.numeric {
+.numeric {
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+.rate .percent {
+  display: inline-block;
+  width: 4.5em;
 }
 
 td.trend {
   text-align: center;
 }
 
-td.trend-positive { color: green; }
-td.trend-negative { color: red; }
+.trend .positive { color: green; }
+.trend .negative { color: red; }
 
 .job-nodata    { background-color: #d6d8db; }
 .job-permafail { background-color: #f5969b; }

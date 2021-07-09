@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/dmage/ci-results/ciinfo"
 	"github.com/dmage/ci-results/database"
 	"github.com/dmage/ci-results/sippy"
 	"github.com/dmage/ci-results/testgrid"
@@ -67,10 +68,11 @@ type job struct {
 }
 
 type build struct {
-	JobName   string
-	Number    string
-	Timestamp int64
-	Tests     map[string]testgrid.TestStatus
+	JobDashboard string
+	JobName      string
+	Number       string
+	Timestamp    int64
+	Tests        map[string]testgrid.TestStatus
 }
 
 type jobResults struct {
@@ -188,12 +190,14 @@ func getTag(jobName string, taggers []regexpTagger, fallback string) string {
 	return fallback
 }
 
-func jobTags(jobName string) database.JobTags {
+func jobTags(t *ciinfo.Tagger, jobName string) database.JobTags {
+	tags := sippy.IdentifyVariants(jobName)
+	tags = append(tags, t.GetTags(jobName)...)
 	return database.JobTags{
 		Platform: getTag(jobName, platforms, "unknown"),
 		Mod:      getTag(jobName, mods, "none"),
 		TestType: getTag(jobName, testTypes, "other"),
-		Sippy:    sippy.IdentifyVariants(jobName),
+		Sippy:    tags,
 	}
 }
 
@@ -215,6 +219,21 @@ func (opts *IndexerOptions) Run(ctx context.Context) (err error) {
 	var w workers
 	jobsCh := make(chan job, 100)
 	buildsCh := make(chan build, 1000)
+
+	tagger := ciinfo.NewTagger()
+	for _, variant := range []string{
+		"ci-4.8",
+		"ci-4.8-upgrade-from-stable-4.7",
+		"ci-4.8-upgrade-from-from-stable-4.7-from-stable-4.6",
+		"nightly-4.8",
+		"nightly-4.8-upgrade-from-stable-4.7",
+	} {
+		cfg, err := ciinfo.DownloadConfig("openshift", "release", "master", variant)
+		if err != nil {
+			klog.Fatal(err)
+		}
+		tagger.AddConfig(cfg)
+	}
 
 	w.spawn(1, func() error {
 		for _, dashboard := range []string{
@@ -248,10 +267,11 @@ func (opts *IndexerOptions) Run(ctx context.Context) (err error) {
 			results := unpackJobResults(packedResults)
 			for i, id := range results.Changelists {
 				build := build{
-					JobName:   job.Name,
-					Number:    id,
-					Timestamp: results.Timestamps[i],
-					Tests:     make(map[string]testgrid.TestStatus),
+					JobDashboard: job.Dashboard,
+					JobName:      job.Name,
+					Number:       id,
+					Timestamp:    results.Timestamps[i],
+					Tests:        make(map[string]testgrid.TestStatus),
 				}
 				for testName, statuses := range results.Tests {
 					status := statuses[i]
@@ -307,7 +327,7 @@ func (opts *IndexerOptions) Run(ctx context.Context) (err error) {
 
 			jobID, err := tx.FindJob(build.JobName)
 			if database.IsNotFound(err) {
-				jobID, err = tx.InsertJob(build.JobName, jobTags(build.JobName))
+				jobID, err = tx.InsertJob(build.JobName, build.JobDashboard, jobTags(tagger, build.JobName))
 				if err != nil {
 					return err
 				}

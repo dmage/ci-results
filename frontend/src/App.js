@@ -1,4 +1,5 @@
-import React, { Component } from 'react';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Route, Link, useLocation, useHistory } from 'react-router-dom';
 import './App.css';
 
 function runs(x) {
@@ -21,176 +22,162 @@ function passRateChange(x) {
 function jobState(x) {
   const rate = passRate(x, -1);
   if (rate === -1) {
-    return "nodata";
+    return 'nodata';
   }
   if (rate === 0) {
-    return "permafail";
+    return 'permafail';
   }
   if (rate < .6) {
-    return "red";
+    return 'red';
   }
   if (rate < .8) {
-    return "yellow";
+    return 'yellow';
   }
-  return "green";
+  return 'green';
 }
 
-function showDelta(d) {
-  if (d < 0) {
-    return "⬇";
+function PassRate({ jobValue }) {
+  const rate = passRate(jobValue, -1);
+  let value = 'n/a';
+  if (rate !== -1) {
+    value = (rate*100).toFixed(2) + '%';
   }
-  if (d > 0) {
-    return "⬆";
-  }
-  return "-";
+  return (
+    <span className="rate"><span className="percent numeric">{value}</span> ({runs(jobValue)} runs)</span>
+  );
 }
 
-function classDelta(d) {
-  if (d < 0) {
-    return "negative";
+function PassRateChange({ jobValues }) {
+  const curr = passRate(jobValues[0], -1), prev = passRate(jobValues[1], -1);
+  let className, symbol;
+  if (curr === -1 || prev === -1) {
+    className = 'na';
+    symbol = '?';
+  } else if (Math.abs(curr - prev) < .02) {
+    className = 'neutral';
+    symbol = '-';
+  } else if (curr - prev < 0) {
+    className = 'negative';
+    symbol = '⬇';
+  } else {
+    className = 'positive';
+    symbol = '⬆';
   }
-  if (d > 0) {
-    return "positive";
-  }
-  return "neutral";
+  return (
+    <span className={className}>{symbol}</span>
+  );
 }
 
-function passDelta(prev, curr) {
-  const p = passRate(prev, -1), c = passRate(curr, -1);
-  if (p === -1 || c === -1) {
-    return 0;
+function getSortFunc(sortBy) {
+  if (sortBy === 'currentPassRate') {
+    return (a, b) => {
+      return passRate(a.values[0], -1) - passRate(b.values[0], -1);
+    }
+  } else if (sortBy === 'previousPassRate') {
+    return (a, b) => {
+      return passRate(a.values[1], -1) - passRate(b.values[1], -1);
+    }
+  } else if (sortBy === 'passRateChange') {
+    return (a, b) => {
+      let c = passRateChange(a.values) - passRateChange(b.values);
+      if (c !== 0) {
+        return c;
+      }
+      return passRate(a.values[0], -1) - passRate(b.values[0], -1);
+    }
   }
-  if (Math.abs(c - p) < .02) {
-    return 0;
-  }
-  return c - p;
 }
 
-function formatRate(x) {
-  if (x === -1) {
-    return "n/a";
-  }
-  return (x*100).toFixed(2) + "%";
+function useQueryParam(paramName, defaultValue) {
+  const history = useHistory();
+  const search = useLocation().search;
+  const query = new URLSearchParams(search);
+  const value = query.get(paramName) || defaultValue;
+  return [value, newValue => {
+    query.set(paramName, newValue);
+    const newSearch = query.toString();
+    if (search !== newSearch) {
+      history.push('?' + newSearch);
+    }
+  }];
 }
 
-class App extends Component {
-  constructor(props) {
-    super(props);
+function Main(props) {
+  const [columns, setColumns] = useQueryParam('columns', 'sippytags');
+  const [filter, setFilter] = useQueryParam('filter', '');
+  const [periods, setPeriods] = useQueryParam('periods', '7,7');
+  const [sortBy, setSortBy] = useQueryParam('sortby', 'currentPassRate');
+  const [rawData, setRawData] = useState([]);
+  const [data, setData] = useState([]);
 
-    this.state = {
-      data: [],
-      columns: "sippytags",
-      filter: "",
-      sortBy: "currentPassRate",
-      periods: "7,7",
-    };
-  }
-
-  componentDidMount() {
-    this.handleFilterChange(this.state.filter);
-  }
-
-  refreshData() {
-    const columns = this.state.columns, filter = this.state.filter, periods = this.state.periods;
+  useEffect(() => {
+    // TODO: cancel previous request
     fetch('/api/builds?columns=' + columns + '&filter=' + filter + '&periods=' + periods)
       .then(response => response.json())
       .then(data => {
-        if (this.state.columns === columns && this.state.filter === filter && this.state.periods === periods) {
-          this.updateData(data.data);
-        }
+        setRawData(data.data);
       });
-  }
+  }, [columns, filter, periods]);
 
-  sortFunc() {
-    if (this.state.sortBy === "currentPassRate") {
-      return (a, b) => {
-        return passRate(a.values[0], -1) - passRate(b.values[0], -1);
-      }
-    } else if (this.state.sortBy === "previousPassRate") {
-      return (a, b) => {
-        return passRate(a.values[1], -1) - passRate(b.values[1], -1);
-      }
-    } else if (this.state.sortBy === "passRateChange") {
-      return (a, b) => {
-        let c = passRateChange(a.values) - passRateChange(b.values);
-        if (c !== 0) {
-          return c;
-        }
-        return passRate(a.values[0], -1) - passRate(b.values[0], -1);
-      }
-    }
-  }
+  useEffect(() => {
+    let data = [...rawData];
+    data.sort(getSortFunc(sortBy));
+    setData(data);
+  }, [rawData, sortBy]);
 
-  updateData(data) {
-    data.sort(this.sortFunc());
-    this.setState({data: data});
-  }
-
-  handleColumnsChange(value) {
-    this.setState({columns: value}, () => {
-      this.refreshData();
-    });
-  }
-
-  handleFilterChange(value) {
-    this.setState({filter: value}, () => {
-      this.refreshData();
-    });
-  }
-
-  handleSortByChange(value) {
-    this.setState({sortBy: value}, () => {
-      this.updateData(this.state.data);
-    });
-  }
-
-  handlePeriodsChange(value) {
-    this.setState({periods: value}, () => {
-      this.refreshData();
-    });
-  }
-
-  render() {
-    return (
-      <div className="app">
-        <div className="filter">
-          <select onChange={ev => { this.handleColumnsChange(ev.target.value); }}>
-            <option value="sippytags">Sippy Variants</option>
-            <option value="name">Job Names</option>
-            <option value="test">Tests</option>
-          </select>
-          <input type="text" placeholder="filter, for example: aws -upgrade" value={this.state.filter} onChange={ev => { this.handleFilterChange(ev.target.value); }} />
-          <select onChange={ev => { this.handleSortByChange(ev.target.value); }}>
-            <option value="currentPassRate">Sort by pass rate (this week)</option>
-            <option value="previousPassRate">Sort by pass rate (previous week)</option>
-            <option value="passRateChange">Sort by pass rate change</option>
-          </select>
-          <select onChange={ev => { this.handlePeriodsChange(ev.target.value); }}>
-            <option value="7,7">last 7 days, previous 7 days</option>
-            <option value="2,12">last 2 days, previous 12 days</option>
-            <option value="1,13">last 24 hours, previous 13 days</option>
-            <option value="1,1">last 24 hours, previous 24 hours</option>
-          </select>
-        </div>
-        <table>
-          <tbody>
-            {this.state.data.map((row, i) => {
-              return (
-                <tr key={i} className={"job-"+jobState(row.values[0])}>
-                  <td>{row.columns[0]}</td>
-                  <td className="group-start numeric">{formatRate(passRate(row.values[0], -1))}</td>
-                  <td>({runs(row.values[0])} runs)</td>
-                  <td className={"trend trend-"+classDelta(passDelta(row.values[1], row.values[0]))}>{showDelta(passDelta(row.values[1], row.values[0]))}</td>
-                  <td className="group-start numeric">{formatRate(passRate(row.values[1], -1))}</td>
-                  <td>({runs(row.values[1])} runs)</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+  return (
+    <div className="app">
+      <div className="filter">
+        <select value={columns} onChange={ev => { setColumns(ev.target.value); }}>
+          <option value="sippytags">Sippy Variants</option>
+          <option value="name,dashboard">Job Names</option>
+          <option value="test">Tests</option>
+        </select>
+        <input type="text" placeholder="filter, for example: aws -upgrade" value={filter} onChange={ev => { setFilter(ev.target.value); }} />
+        <select value={sortBy} onChange={ev => { setSortBy(ev.target.value); }}>
+          <option value="currentPassRate">Sort by pass rate (current period)</option>
+          <option value="previousPassRate">Sort by pass rate (previous period)</option>
+          <option value="passRateChange">Sort by pass rate change</option>
+        </select>
+        <select value={periods} onChange={ev => { setPeriods(ev.target.value); }}>
+          <option value="7,60">last 7 days, previous 60 days</option>
+          <option value="14,14">last 14 days, previous 14 days</option>
+          <option value="7,21">last 7 days, previous 21 days</option>
+          <option value="3,25">last 3 days, previous 25 days</option>
+          <option value="7,7">last 7 days, previous 7 days</option>
+          <option value="2,12">last 2 days, previous 12 days</option>
+          <option value="1,13">last 24 hours, previous 13 days</option>
+          <option value="1,1">last 24 hours, previous 24 hours</option>
+        </select>
       </div>
-    );
-  }
+      <table>
+        <tbody>
+          {data.map((row, i) => {
+            return (
+              <tr key={i} className={"job-"+jobState(row.values[0])}>
+                <td>{
+                  columns === "sippytags" ? <Link to={"?columns=sippytags&filter=" + filter + (filter ? " " : "") + row.columns[0] + "&sortby=" + sortBy + "&periods=" + periods}>{row.columns[0]}</Link> :
+                  columns === "name,dashboard" ? <a target="_blank" rel="noreferrer" href={"https://testgrid.k8s.io/" + row.columns[1] + "#" + row.columns[0]}>{row.columns[0]}</a> :
+                  row.columns[0]
+                }</td>
+                <td><PassRate jobValue={row.values[0]} /></td>
+                <td className="trend"><PassRateChange jobValues={row.values} /></td>
+                <td><PassRate jobValue={row.values[1]} /></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <Router>
+      <Route exact path="/" component={Main} />
+    </Router>
+  );
 }
 
 export default App;
