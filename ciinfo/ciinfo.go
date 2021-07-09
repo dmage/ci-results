@@ -77,37 +77,55 @@ func getEnv(envs []Env, key string) string {
 	return ""
 }
 
+func testSuiteSlug(suite string) string {
+	switch suite {
+	case "openshift/conformance/parallel":
+		return "parallel"
+	case "openshift/conformance/serial":
+		return "serial"
+	case "openshift/csi":
+		return "csi"
+	case "experimental/reliability/minimal":
+		return "canary"
+	}
+	return "unknown"
+}
+
 func Tags(test Test) []string {
 	var tags []string
 	tags = append(tags, "x-platform-"+test.LiteralSteps.ClusterProfile)
 	foundTest := false
 	for _, step := range test.LiteralSteps.Test {
 		switch step.As {
-		case "openshift-e2e-test", "openshift-e2e-libvirt-test", "baremetalds-e2e-test":
+		case "openshift-e2e-libvirt-test":
 			tag := "x-test-openshift-e2e-"
 			switch getEnv(step.Env, "TEST_TYPE") {
-			case "suite", "conformance-serial", "conformance-parallel":
-				tag += "suite-"
-				switch getEnv(step.Env, "TEST_SUITE") {
-				case "openshift/conformance/parallel":
-					tag += "parallel"
-				case "openshift/conformance/serial":
-					tag += "serial"
-				case "openshift/csi":
-					tag += "csi"
-				case "experimental/reliability/minimal":
-					tag += "canary"
-				default:
-					tag += "unknown"
-				}
-			case "upgrade-conformance":
-				tag += "upgrade-conformance"
+			case "conformance-serial":
+				tag += "suite-serial"
+			case "conformance-parallel":
+				tag += "suite-parallel"
+			case "suite":
+				tag += "suite-" + testSuiteSlug(getEnv(step.Env, "TEST_SUITE"))
 			case "upgrade":
 				tag += "upgrade-only"
 			case "image-ecosystem":
 				tag += "image-ecosystem"
 			case "jenkins-e2e-rhel-only":
 				tag += "jenkins-e2e-rhel-only"
+			default:
+				tag += "unknown"
+			}
+			foundTest = true
+			tags = append(tags, tag)
+		case "openshift-e2e-test", "baremetalds-e2e-test":
+			tag := "x-test-openshift-e2e-"
+			switch getEnv(step.Env, "TEST_TYPE") {
+			case "suite":
+				tag += "suite-" + testSuiteSlug(getEnv(step.Env, "TEST_SUITE"))
+			case "upgrade":
+				tag += "upgrade-only"
+			case "upgrade-conformance":
+				tag += "upgrade-conformance"
 			default:
 				tag += "unknown"
 			}
