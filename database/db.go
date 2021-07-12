@@ -518,9 +518,10 @@ func (db *dbImpl) BuildStats(columns string, filter string, periods string) (*St
 		if err != nil {
 			return nil, err
 		}
-		if len(jobIDs) != 0 {
-			query.Where("j.id IN (" + sqlInt64List(jobIDs) + ")")
+		if len(jobIDs) == 0 {
+			return &results, nil
 		}
+		query.Where("j.id IN (" + sqlInt64List(jobIDs) + ")")
 	}
 
 	var columnsPtrs []*string
