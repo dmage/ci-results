@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Route, Link, useLocation, useHistory } from 'react-router-dom';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
+import { randomColor } from 'randomcolor';
+
 import './App.css';
 
 function runs(x) {
@@ -102,6 +105,76 @@ function useQueryParam(paramName, defaultValue) {
   }];
 }
 
+function SippyTable({ data, columns, filter, sortBy, periods }) {
+  return (
+    <table>
+      <tbody>
+        {data.map((row, i) => {
+          return (
+            <tr key={i} className={'job-'+jobState(row.values[0])}>
+              <td>{
+                columns === 'sippytags' ? <Link to={'?columns=sippytags&filter=' + filter + (filter ? ' ' : '') + row.columns[0] + '&sortby=' + sortBy + '&periods=' + periods}>{row.columns[0]}</Link> :
+                columns === 'name,dashboard' ? <a target="_blank" rel="noreferrer" href={'https://testgrid.k8s.io/' + row.columns[1] + '#' + row.columns[0]}>{row.columns[0]}</a> :
+                row.columns[0]
+              }</td>
+              <td><PassRate jobValue={row.values[0]} /></td>
+              <td className="trend"><PassRateChange jobValues={row.values} /></td>
+              <td><PassRate jobValue={row.values[1]} /></td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function mixColors(a, b, q) {
+  let ar = a.slice(1,3), ag = a.slice(3,5), ab = a.slice(5,7);
+  let br = b.slice(1,3), bg = b.slice(3,5), bb = b.slice(5,7);
+  let rr = Math.round(parseInt(ar, 16)*q + parseInt(br, 16)*(1-q));
+  let rg = Math.round(parseInt(ag, 16)*q + parseInt(bg, 16)*(1-q));
+  let rb = Math.round(parseInt(ab, 16)*q + parseInt(bb, 16)*(1-q));
+  return '#' + rr.toString(16).padStart(2, '0') + rg.toString(16).padStart(2, '0') + rb.toString(16).padStart(2, '0');
+}
+
+function Chart({ data }) {
+  let [selected, setSelected] = useState('');
+
+  if (data.length === 0) {
+    return '';
+  }
+
+  let columns = [];
+  for (let i = 0; i < data[0].values.length; i++) {
+    let values = {x: -data[0].values.length + i + 1};
+    data.forEach(row => {
+      values[row.columns[0]] = Math.round(passRate(row.values[row.values.length - i - 1], NaN)*10000)/100;
+    });
+    columns.push(values);
+  }
+
+  let colors = randomColor({ count: data.length, luminosity: 'dark', seed: 0 });
+
+  return (
+    <LineChart
+      width={800}
+      height={400}
+      data={columns}
+      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+    >
+      <CartesianGrid strokeDasharray="3 3" />
+      <XAxis dataKey="x" />
+      <YAxis />
+      <Legend height={36}
+        onMouseEnter={(o) => { setSelected(o.dataKey); }}
+        onMouseLeave={(o) => { setSelected(''); }} />
+      {data.map((row, i) => <Line type="monotone" stroke={selected === '' || row.columns[0] === selected ? colors[i] : mixColors(colors[i], '#ffffff', 0.2)} dataKey={row.columns[0]} strokeOpacity={selected === '' || row.columns[0] === selected ? 1 : 0.5}
+        onMouseEnter={() => { setSelected(row.columns[0]); }}
+        onMouseLeave={() => { setSelected(''); }} /> )}
+    </LineChart>
+  );
+}
+
 function Main(props) {
   const [columns, setColumns] = useQueryParam('columns', 'sippytags');
   const [filter, setFilter] = useQueryParam('filter', '');
@@ -148,26 +221,15 @@ function Main(props) {
           <option value="2,12">last 2 days, previous 12 days</option>
           <option value="1,13">last 24 hours, previous 13 days</option>
           <option value="1,1">last 24 hours, previous 24 hours</option>
+          <option value="1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1">chart</option>
+          <option value="7,7,7,7">chart (weekly)</option>
         </select>
       </div>
-      <table>
-        <tbody>
-          {data.map((row, i) => {
-            return (
-              <tr key={i} className={"job-"+jobState(row.values[0])}>
-                <td>{
-                  columns === "sippytags" ? <Link to={"?columns=sippytags&filter=" + filter + (filter ? " " : "") + row.columns[0] + "&sortby=" + sortBy + "&periods=" + periods}>{row.columns[0]}</Link> :
-                  columns === "name,dashboard" ? <a target="_blank" rel="noreferrer" href={"https://testgrid.k8s.io/" + row.columns[1] + "#" + row.columns[0]}>{row.columns[0]}</a> :
-                  row.columns[0]
-                }</td>
-                <td><PassRate jobValue={row.values[0]} /></td>
-                <td className="trend"><PassRateChange jobValues={row.values} /></td>
-                <td><PassRate jobValue={row.values[1]} /></td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {
+        periods === '1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1' || periods === '7,7,7,7' ?
+          <Chart data={data} /> :
+          <SippyTable data={data} columns={columns} filter={filter} sortBy={sortBy} periods={periods} />
+      }
     </div>
   );
 }

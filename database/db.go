@@ -418,102 +418,190 @@ func (db *dbImpl) findJobIDsByFilter(filter string) ([]int64, error) {
 	return result, nil
 }
 
+type QueryBuilder struct {
+	from         string
+	columns      []string
+	columnsPtrs  []interface{}
+	selectParams []interface{}
+	joins        []string
+	joinParams   []interface{}
+	condition    string
+	whereParams  []interface{}
+	groupby      []string
+}
+
+func (qb *QueryBuilder) Select(column string, output interface{}, params ...interface{}) {
+	qb.columns = append(qb.columns, column)
+	qb.columnsPtrs = append(qb.columnsPtrs, output)
+	qb.selectParams = append(qb.selectParams, params...)
+}
+
+func (qb *QueryBuilder) Join(j string, params ...interface{}) {
+	qb.joins = append(qb.joins, "JOIN "+j)
+	qb.joinParams = append(qb.joinParams, params...)
+}
+
+func (qb *QueryBuilder) Where(cond string, params ...interface{}) {
+	if qb.condition != "" {
+		qb.condition += " AND "
+	}
+	qb.condition += cond
+	qb.whereParams = append(qb.whereParams, params...)
+}
+
+func (qb *QueryBuilder) GroupBy(column string) {
+	qb.groupby = append(qb.groupby, column)
+}
+
+func (qb *QueryBuilder) SQL() (string, []interface{}, []interface{}) {
+	var params []interface{}
+
+	q := "SELECT"
+	for i, col := range qb.columns {
+		if i != 0 {
+			q += ","
+		}
+		q = q + " " + col
+	}
+	params = append(params, qb.selectParams...)
+
+	q += " FROM " + qb.from
+
+	for _, j := range qb.joins {
+		q += " " + j
+	}
+	params = append(params, qb.joinParams...)
+
+	if qb.condition != "" {
+		q += " WHERE " + qb.condition
+	}
+	params = append(params, qb.whereParams...)
+
+	if len(qb.groupby) > 0 {
+		q += " GROUP BY"
+		for i, col := range qb.groupby {
+			if i != 0 {
+				q += ","
+			}
+			q = q + " " + col
+		}
+	}
+
+	return q, params, qb.columnsPtrs
+}
+
+func sqlInt64List(a []int64) string {
+	var s string
+	for i, num := range a {
+		if i != 0 {
+			s += ","
+		}
+		s += strconv.FormatInt(num, 10)
+	}
+	return s
+}
+
 func (db *dbImpl) BuildStats(columns string, filter string, periods string) (*Stats, error) {
+	now := time.Now()
+
 	results := Stats{
 		Data: []*StatsRow{},
 	}
 	resultsByTag := map[string]*StatsRow{}
-	now := time.Now()
-	conds := ""
+
+	var query QueryBuilder
+	query.from = "builds b"
+	query.Join("jobs j ON j.id = b.job_id")
+
 	if filter != "" {
 		jobIDs, err := db.findJobIDsByFilter(filter)
 		if err != nil {
 			return nil, err
 		}
-		if len(jobIDs) == 0 {
-			conds = "WHERE 0 = 1"
-		} else {
-			conds = "WHERE j.id IN ("
-			for i, id := range jobIDs {
-				if i != 0 {
-					conds += ","
-				}
-				conds += strconv.FormatInt(id, 10)
-			}
-			conds += ")"
+		if len(jobIDs) != 0 {
+			query.Where("j.id IN (" + sqlInt64List(jobIDs) + ")")
 		}
 	}
-	sel := "jst.tag"
+
+	var columnsPtrs []*string
 	statusField := "b.status"
-	joins := "JOIN jobs_sippy_tags jst ON jst.job_id = j.id"
-	if columns == "name" {
-		sel = "j.name"
-		joins = ""
-	} else if columns == "test" {
-		sel = "t.name"
-		statusField = "tr.status"
-		joins += " JOIN test_results tr ON tr.build_id = b.id JOIN tests t ON t.id = tr.test_id"
-	} else if columns == "name,dashboard" {
-		sel = "j.name, j.dashboard"
-		joins = ""
+	for _, col := range strings.Split(columns, ",") {
+		switch col {
+		case "sippytags":
+			var val string
+			query.Join("jobs_sippy_tags jst ON jst.job_id = j.id")
+			query.Select("jst.tag", &val)
+			query.GroupBy("jst.tag")
+			columnsPtrs = append(columnsPtrs, &val)
+		case "name":
+			var val string
+			query.Select("j.name", &val)
+			query.GroupBy("j.name")
+			columnsPtrs = append(columnsPtrs, &val)
+		case "dashboard":
+			var val string
+			query.Select("j.dashboard", &val)
+			query.GroupBy("j.dashboard")
+			columnsPtrs = append(columnsPtrs, &val)
+		case "test":
+			var val string
+			statusField = "tr.status"
+			query.Join("test_results tr ON tr.build_id = b.id")
+			query.Join("tests t ON t.id = tr.test_id")
+			query.Select("t.name", &val)
+			query.GroupBy("t.name")
+			columnsPtrs = append(columnsPtrs, &val)
+		default:
+			return nil, fmt.Errorf("unknown column %s", col)
+		}
 	}
-	if conds == "" {
-		conds = "WHERE "
-	} else {
-		conds += " AND "
+
+	var status int
+	query.Select(statusField, &status)
+	query.GroupBy(statusField)
+
+	var periodsPtrs []*int
+	var days int64
+	for _, per := range strings.Split(periods, ",") {
+		p, err := strconv.ParseInt(per, 10, 0)
+		if err != nil {
+			return nil, err
+		}
+		var val int
+		if days == 0 {
+			query.Select("SUM(? <= b.timestamp)", &val, (now.Unix()-86400*p)*1000)
+		} else {
+			query.Select("SUM(? <= b.timestamp AND b.timestamp < ?)", &val, (now.Unix()-86400*(days+p))*1000, (now.Unix()-86400*days)*1000)
+		}
+		periodsPtrs = append(periodsPtrs, &val)
+		days += p
 	}
-	conds += "b.timestamp >= ?"
-	p := strings.Split(periods, ",")
-	if len(p) != 2 {
-		return nil, fmt.Errorf("periods should be <number>,<number>, got %s", periods)
-	}
-	p1, err := strconv.ParseInt(p[0], 10, 0)
-	if err != nil {
-		return nil, err
-	}
-	p2, err := strconv.ParseInt(p[1], 10, 0)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := db.Query(
-		"SELECT "+sel+", "+statusField+", SUM(? <= b.timestamp), SUM(? <= b.timestamp AND b.timestamp < ?) FROM builds b JOIN jobs j ON j.id = b.job_id "+joins+" "+conds+" GROUP BY "+sel+", "+statusField,
-		(now.Unix()-86400*p1)*1000,
-		(now.Unix()-86400*(p1+p2))*1000, (now.Unix()-86400*p1)*1000,
-		(now.Unix()-86400*(p1+p2))*1000,
-	)
+	query.Where("b.timestamp >= ?", (now.Unix()-86400*days)*1000)
+
+	sql, params, scanParams := query.SQL()
+
+	rows, err := db.Query(sql, params...)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var tag string
-		var dashboard string
-		var status int
-		var currWeek int
-		var prevWeek int
-		scanColumns := []interface{}{&tag}
-		if columns == "name,dashboard" {
-			scanColumns = append(scanColumns, &dashboard)
-		}
-		scanColumns = append(scanColumns, &status, &currWeek, &prevWeek)
-		err := rows.Scan(scanColumns...)
+		err := rows.Scan(scanParams...)
 		if err != nil {
 			return nil, err
 		}
 
-		key := tag
-		columnsValues := []string{tag}
-		if columns == "name,dashboard" {
-			key += "/" + dashboard
-			columnsValues = []string{tag, dashboard}
+		key := ""
+		columnsValues := []string{}
+		for _, p := range columnsPtrs {
+			key += "/" + *p
+			columnsValues = append(columnsValues, *p)
 		}
 
 		row, ok := resultsByTag[key]
 		if !ok {
 			row = &StatsRow{
 				Columns: columnsValues,
-				Values: []StatsValues{
-					{}, {},
-				},
+				Values:  make([]StatsValues, len(periodsPtrs)),
 			}
 			results.Data = append(results.Data, row)
 			resultsByTag[key] = row
@@ -521,21 +609,25 @@ func (db *dbImpl) BuildStats(columns string, filter string, periods string) (*St
 
 		if statusField == "tr.status" {
 			if status == int(testgrid.TestStatusPass) || status == int(testgrid.TestStatusPassWithSkips) || status == int(testgrid.TestStatusFlaky) {
-				row.Values[0].Pass += currWeek
-				row.Values[1].Pass += prevWeek
+				for i, p := range periodsPtrs {
+					row.Values[i].Pass += *p
+				}
 			} else if status == int(testgrid.TestStatusFail) {
-				row.Values[0].Fail += currWeek
-				row.Values[1].Fail += prevWeek
+				for i, p := range periodsPtrs {
+					row.Values[i].Fail += *p
+				}
 			} else {
 				klog.Infof("unexpected test status: %d", status)
 			}
 		} else {
 			if status == 1 {
-				row.Values[0].Pass = currWeek
-				row.Values[1].Pass = prevWeek
+				for i, p := range periodsPtrs {
+					row.Values[i].Pass += *p
+				}
 			} else if status == 2 {
-				row.Values[0].Fail = currWeek
-				row.Values[1].Fail = prevWeek
+				for i, p := range periodsPtrs {
+					row.Values[i].Fail += *p
+				}
 			}
 		}
 	}
