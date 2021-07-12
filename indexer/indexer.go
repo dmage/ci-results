@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -190,9 +191,48 @@ func getTag(jobName string, taggers []regexpTagger, fallback string) string {
 	return fallback
 }
 
-func jobTags(t *ciinfo.Tagger, jobName string) database.JobTags {
+var neverStable = map[string]bool{
+	"periodic-ci-openshift-release-master-ci-4.9-upgrade-from-stable-4.8-e2e-aws-ovn-upgrade":        true,
+	"periodic-ci-openshift-release-master-ci-4.9-upgrade-from-stable-4.8-e2e-aws-upgrade":            true,
+	"periodic-ci-openshift-release-master-ci-4.9-upgrade-from-stable-4.8-e2e-azure-ovn-upgrade":      true,
+	"periodic-ci-openshift-release-master-ci-4.9-upgrade-from-stable-4.8-e2e-gcp-ovn-upgrade":        true,
+	"periodic-ci-openshift-release-master-ci-4.9-upgrade-from-stable-4.8-e2e-ovirt-upgrade":          true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-aws-csi-migration":                         true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-aws-proxy":                                 true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-aws-upgrade":                               true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-aws-workers-rhel7":                         true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-compact-remote-libvirt-ppc64le":            true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-compact-remote-libvirt-s390x":              true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-gcp-rt":                                    true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-metal-ipi":                                 true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-metal-ipi-ovn-dualstack":                   true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-metal-ipi-ovn-ipv6":                        true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-metal-ipi-upgrade":                         true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-remote-libvirt-ppc64le":                    true,
+	"periodic-ci-openshift-release-master-nightly-4.9-e2e-remote-libvirt-s390x":                      true,
+	"periodic-ci-openshift-release-master-nightly-4.9-openshift-ipi-azure-arcconformance":            true,
+	"periodic-ci-openshift-release-master-nightly-4.9-upgrade-from-stable-4.8-e2e-aws-upgrade":       true,
+	"periodic-ci-openshift-release-master-nightly-4.9-upgrade-from-stable-4.8-e2e-metal-ipi-upgrade": true,
+	"release-openshift-ocp-installer-e2e-aws-upi-4.9":                                                true,
+	"release-openshift-ocp-installer-e2e-azure-ovn-4.9":                                              true,
+	"release-openshift-ocp-installer-e2e-gcp-ovn-4.9":                                                true,
+	"release-openshift-ocp-osd-aws-nightly-4.9":                                                      true,
+	"release-openshift-ocp-osd-gcp-nightly-4.9":                                                      true,
+	"release-openshift-origin-installer-e2e-aws-sdn-network-stress-4.9":                              true,
+}
+
+func jobTags(t *ciinfo.Tagger, dashboard string, jobName string) database.JobTags {
 	tags := sippy.IdentifyVariants(jobName)
 	tags = append(tags, t.GetTags(jobName)...)
+	if strings.Contains(dashboard, "4.8") {
+		tags = append(tags, "4.8")
+	}
+	if strings.Contains(dashboard, "4.9") {
+		tags = append(tags, "4.9")
+	}
+	if neverStable[jobName] {
+		tags = append(tags, "never-stable")
+	}
 	return database.JobTags{
 		Platform: getTag(jobName, platforms, "unknown"),
 		Mod:      getTag(jobName, mods, "none"),
@@ -227,6 +267,12 @@ func (opts *IndexerOptions) Run(ctx context.Context) (err error) {
 		"ci-4.8-upgrade-from-from-stable-4.7-from-stable-4.6",
 		"nightly-4.8",
 		"nightly-4.8-upgrade-from-stable-4.7",
+		"ci-4.9",
+		"ci-4.9-upgrade-from-stable-4.8",
+		"ci-4.9-upgrade-from-stable-4.8-from-stable-4.7",
+		"nightly-4.9",
+		"nightly-4.9-upgrade-from-stable-4.8",
+		"nightly-4.9-upgrade-from-stable-4.7",
 	} {
 		cfg, err := ciinfo.DownloadConfig("openshift", "release", "master", variant)
 		if err != nil {
@@ -239,6 +285,8 @@ func (opts *IndexerOptions) Run(ctx context.Context) (err error) {
 		for _, dashboard := range []string{
 			"redhat-openshift-ocp-release-4.8-blocking",
 			"redhat-openshift-ocp-release-4.8-informing",
+			"redhat-openshift-ocp-release-4.9-blocking",
+			"redhat-openshift-ocp-release-4.9-informing",
 		} {
 			summary, err := testgrid.GetDashboardSummary(dashboard)
 			if err != nil {
@@ -327,7 +375,7 @@ func (opts *IndexerOptions) Run(ctx context.Context) (err error) {
 
 			jobID, err := tx.FindJob(build.JobName)
 			if database.IsNotFound(err) {
-				jobID, err = tx.InsertJob(build.JobName, build.JobDashboard, jobTags(tagger, build.JobName))
+				jobID, err = tx.InsertJob(build.JobName, build.JobDashboard, jobTags(tagger, build.JobDashboard, build.JobName))
 				if err != nil {
 					return err
 				}

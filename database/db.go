@@ -360,7 +360,7 @@ type Stats struct {
 }
 
 func (db *dbImpl) findJobIDsByFilter(filter string) ([]int64, error) {
-	tagRe := regexp.MustCompile("^[a-z0-9-]+$")
+	tagRe := regexp.MustCompile("^[a-z0-9.-]+$")
 	terms := strings.Split(filter, " ")
 
 	joins := ""
