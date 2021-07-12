@@ -49,3 +49,11 @@ td.trend {
 .job-red       { background-color: #f5c6cb; }
 .job-yellow    { background-color: #ffeeba; }
 .job-green     { background-color: #c3e6cb; }
+
+.heatmap-cell { text-align: center; width: 1em; }
+.heatmap-cell-nodata { background-color: #ccc; }
+.heatmap-cell-zero { background-color: #c30; }
+.heatmap-cell-00 { background-color: #f96; }
+.heatmap-cell-40 { background-color: #fc0; }
+.heatmap-cell-60 { background-color: #9c3; }
+.heatmap-cell-80 { background-color: #390; }

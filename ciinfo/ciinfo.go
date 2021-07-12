@@ -126,6 +126,8 @@ func Tags(test Test) []string {
 				tag += "upgrade-only"
 			case "upgrade-conformance":
 				tag += "upgrade-conformance"
+			case "upgrade-paused":
+				tag += "upgrade-paused"
 			default:
 				tag += "unknown"
 			}

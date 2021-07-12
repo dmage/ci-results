@@ -72,7 +72,12 @@ function PassRateChange({ jobValues }) {
 }
 
 function getSortFunc(sortBy) {
-  if (sortBy === 'currentPassRate') {
+  if (sortBy === 'name') {
+    return (a, b) => {
+      const aa = a.columns[0], bb = b.columns[0];
+      return aa < bb ? -1 : +(aa > bb);
+    }
+  } else if (sortBy === 'currentPassRate') {
     return (a, b) => {
       return passRate(a.values[0], -1) - passRate(b.values[0], -1);
     }
@@ -175,13 +180,81 @@ function Chart({ data }) {
   );
 }
 
+function heatmapColor(x) {
+  if (isNaN(x)) {
+    return 'nodata';
+  }
+  if (x === 0) {
+    return 'zero';
+  }
+  if (x < 40) {
+    return '00';
+  }
+  if (x < 60) {
+    return '40';
+  }
+  if (x < 80) {
+    return '60';
+  }
+  return '80';
+}
+
+function heatmapValue(x) {
+  if (isNaN(x)) {
+    return '-';
+  }
+  return x;
+}
+
+function Heatmap({ data }) {
+  if (data.length === 0) {
+    return '';
+  }
+
+  let columns = [];
+  for (let i = 0; i < data[0].values.length; i++) {
+    let values = {x: -data[0].values.length + i + 1};
+    data.forEach(row => {
+      values[row.columns[0]] = Math.round(passRate(row.values[row.values.length - i - 1], NaN)*100);
+    });
+    columns.push(values);
+  }
+
+  return (
+    <table>
+      <thead>
+        <th>name</th>
+        {columns.map((col, i) => <th>{i - data[0].values.length + 1}</th>)}
+      </thead>
+      <tbody>
+        {data.map(row => <tr>
+          <td>{row.columns[0]}</td>
+          {columns.map(col => <td className={'heatmap-cell heatmap-cell-' + heatmapColor(col[row.columns[0]])}>
+            {heatmapValue(col[row.columns[0]])}
+          </td>)}
+        </tr>)}
+      </tbody>
+    </table>
+  );
+}
+
 function Main(props) {
   const [columns, setColumns] = useQueryParam('columns', 'sippytags');
   const [filter, setFilter] = useQueryParam('filter', '');
-  const [periods, setPeriods] = useQueryParam('periods', '7,7');
+  const [periodsParam, setPeriods] = useQueryParam('periods', '7,7');
   const [sortBy, setSortBy] = useQueryParam('sortby', 'currentPassRate');
   const [rawData, setRawData] = useState([]);
   const [data, setData] = useState([]);
+
+  let periods = periodsParam;
+  let mode = 'sippytable';
+  let idx = periods.indexOf(':');
+  if (idx !== -1) {
+    mode = periods.slice(idx + 1);
+    periods = periods.slice(0, idx);
+  } else if ((periods.match(/,/g) || []).length > 1) {
+    mode = 'chart';
+  }
 
   useEffect(() => {
     // TODO: cancel previous request
@@ -208,11 +281,12 @@ function Main(props) {
         </select>
         <input type="text" placeholder="filter, for example: aws -upgrade" value={filter} onChange={ev => { setFilter(ev.target.value); }} />
         <select value={sortBy} onChange={ev => { setSortBy(ev.target.value); }}>
+          <option value="name">Sort by name</option>
           <option value="currentPassRate">Sort by pass rate (current period)</option>
           <option value="previousPassRate">Sort by pass rate (previous period)</option>
           <option value="passRateChange">Sort by pass rate change</option>
         </select>
-        <select value={periods} onChange={ev => { setPeriods(ev.target.value); }}>
+        <select value={periodsParam} onChange={ev => { setPeriods(ev.target.value); }}>
           <option value="7,60">last 7 days, previous 60 days</option>
           <option value="14,14">last 14 days, previous 14 days</option>
           <option value="7,21">last 7 days, previous 21 days</option>
@@ -223,12 +297,13 @@ function Main(props) {
           <option value="1,1">last 24 hours, previous 24 hours</option>
           <option value="1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1">chart</option>
           <option value="7,7,7,7">chart (weekly)</option>
+          <option value="1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1:heatmap">heatmap</option>
         </select>
       </div>
       {
-        periods === '1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1' || periods === '7,7,7,7' ?
-          <Chart data={data} /> :
-          <SippyTable data={data} columns={columns} filter={filter} sortBy={sortBy} periods={periods} />
+        mode === 'chart' ? <Chart data={data} /> :
+        mode === 'heatmap' ? <Heatmap data={data} /> :
+        <SippyTable data={data} columns={columns} filter={filter} sortBy={sortBy} periods={periods} />
       }
     </div>
   );
