@@ -110,7 +110,7 @@ function useQueryParam(paramName, defaultValue) {
   }];
 }
 
-function SippyTable({ data, columns, filter, sortBy, periods }) {
+function SippyTable({ data, columns, filter, sortBy, periods, testName }) {
   return (
     <table>
       <tbody>
@@ -118,7 +118,7 @@ function SippyTable({ data, columns, filter, sortBy, periods }) {
           return (
             <tr key={i} className={'job-'+jobState(row.values[0])}>
               <td>{
-                columns === 'sippytags' ? <Link to={'?columns=sippytags&filter=' + filter + (filter ? ' ' : '') + row.columns[0] + '&sortby=' + sortBy + '&periods=' + periods}>{row.columns[0]}</Link> :
+                columns === 'sippytags' ? <Link to={'?columns=sippytags&filter=' + filter + (filter ? ' ' : '') + row.columns[0] + '&sortby=' + sortBy + '&periods=' + periods + '&testname=' + encodeURIComponent(testName) }>{row.columns[0]}</Link> :
                 columns === 'name,dashboard' ? <a target="_blank" rel="noreferrer" href={'https://testgrid.k8s.io/' + row.columns[1] + '#' + row.columns[0]}>{row.columns[0]}</a> :
                 row.columns[0]
               }</td>
@@ -243,6 +243,7 @@ function Main(props) {
   const [filter, setFilter] = useQueryParam('filter', '');
   const [periodsParam, setPeriods] = useQueryParam('periods', '7,7');
   const [sortBy, setSortBy] = useQueryParam('sortby', 'currentPassRate');
+  const [testName, setTestName] = useQueryParam('testname', '');
   const [rawData, setRawData] = useState([]);
   const [data, setData] = useState([]);
 
@@ -258,12 +259,12 @@ function Main(props) {
 
   useEffect(() => {
     // TODO: cancel previous request
-    fetch('/api/builds?columns=' + columns + '&filter=' + filter + '&periods=' + periods)
+    fetch('/api/builds?columns=' + columns + '&filter=' + filter + '&periods=' + periods + '&testname=' + encodeURIComponent(testName))
       .then(response => response.json())
       .then(data => {
         setRawData(data.data);
       });
-  }, [columns, filter, periods]);
+  }, [columns, filter, periods, testName]);
 
   useEffect(() => {
     let data = [...rawData];
@@ -299,11 +300,13 @@ function Main(props) {
           <option value="7,7,7,7">chart (weekly)</option>
           <option value="1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1:heatmap">heatmap</option>
         </select>
+        <br />
+        Test name: <input type="text" placeholder="Overall" value={testName} onChange={ev => { setTestName(ev.target.value); }} />
       </div>
       {
         mode === 'chart' ? <Chart data={data} /> :
         mode === 'heatmap' ? <Heatmap data={data} /> :
-        <SippyTable data={data} columns={columns} filter={filter} sortBy={sortBy} periods={periods} />
+        <SippyTable data={data} columns={columns} filter={filter} sortBy={sortBy} periods={periods} testName={testName} />
       }
     </div>
   );

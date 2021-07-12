@@ -252,6 +252,16 @@ func (db *dbImpl) FindJob(name string) (id int64, err error) {
 	return id, nil
 }
 
+func (db *dbImpl) FindTest(testName string) (id int64, err error) {
+	row := db.selectTestStmt.QueryRow(testName)
+	if err = row.Scan(&id); err == sql.ErrNoRows {
+		return 0, newErrNotFound("test %q does not exist", testName)
+	} else if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
 func (db *dbImpl) InsertJob(name string, dashboard string, tags JobTags) (int64, error) {
 	result, err := db.insertJobStmt.Exec(name, dashboard, tags.Platform, tags.Mod, tags.TestType)
 	if err != nil {
@@ -501,7 +511,7 @@ func sqlInt64List(a []int64) string {
 	return s
 }
 
-func (db *dbImpl) BuildStats(columns string, filter string, periods string) (*Stats, error) {
+func (db *dbImpl) BuildStats(columns string, filter string, periods string, testName string) (*Stats, error) {
 	now := time.Now()
 
 	results := Stats{
@@ -554,6 +564,21 @@ func (db *dbImpl) BuildStats(columns string, filter string, periods string) (*St
 			columnsPtrs = append(columnsPtrs, &val)
 		default:
 			return nil, fmt.Errorf("unknown column %s", col)
+		}
+	}
+
+	if testName != "" {
+		testID, err := db.FindTest(testName)
+		if IsNotFound(err) {
+			return &results, nil
+		} else if err != nil {
+			return nil, err
+		}
+		if statusField == "tr.status" {
+			query.Where("tr.test_id = ?", testID)
+		} else {
+			statusField = "tr.status"
+			query.Join("test_results tr ON tr.build_id = b.id AND tr.test_id = ?", testID)
 		}
 	}
 

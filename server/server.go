@@ -29,7 +29,9 @@ func (opts *ServerOptions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		periods = "7,7"
 	}
 
-	stats, err := opts.db.BuildStats(columns, filter, periods)
+	testname := r.URL.Query().Get("testname")
+
+	stats, err := opts.db.BuildStats(columns, filter, periods, testname)
 	if err != nil {
 		klog.Info(err)
 		http.Error(w, "500 internal server error", 500)
