@@ -239,6 +239,7 @@ function Heatmap({ data }) {
 }
 
 function Main(props) {
+  const [state, setState] = useState('loading');
   const [columns, setColumns] = useQueryParam('columns', 'sippytags');
   const [filter, setFilter] = useQueryParam('filter', '');
   const [periodsParam, setPeriods] = useQueryParam('periods', '7,7');
@@ -246,6 +247,7 @@ function Main(props) {
   const [testName, setTestName] = useQueryParam('testname', '');
   const [rawData, setRawData] = useState([]);
   const [data, setData] = useState([]);
+  const location = useLocation();
 
   let periods = periodsParam;
   let mode = 'sippytable';
@@ -258,11 +260,21 @@ function Main(props) {
   }
 
   useEffect(() => {
+    setState('loading');
     // TODO: cancel previous request
     fetch('/api/builds?columns=' + columns + '&filter=' + filter + '&periods=' + periods + '&testname=' + encodeURIComponent(testName))
-      .then(response => response.json())
+      .then(response => {
+        if (response.status !== 200) {
+          throw new Error(response.statusText);
+        }
+        return response.json();
+      })
       .then(data => {
+        setState('loaded');
         setRawData(data.data);
+      })
+      .catch(error => {
+        setState('error:' + error.toString());
       });
   }, [columns, filter, periods, testName]);
 
@@ -271,6 +283,21 @@ function Main(props) {
     data.sort(getSortFunc(sortBy));
     setData(data);
   }, [rawData, sortBy]);
+
+  let content = [];
+  if (state === 'loading') {
+    content = <div>Loading...</div>;
+  } else if (state.startsWith('error:')) {
+    content = <div>Failed to load data: {state.slice('error:'.length)}; <a href={location.pathname + location.search}>reload</a></div>;
+  } else if (state === 'loaded') {
+    if (mode === 'chart') {
+      content = <Chart data={data} />;
+    } else if (mode === 'heatmap') {
+      content = <Heatmap data={data} />;
+    } else {
+      content = <SippyTable data={data} columns={columns} filter={filter} sortBy={sortBy} periods={periods} testName={testName} />;
+    }
+  }
 
   return (
     <div className="app">
@@ -303,11 +330,7 @@ function Main(props) {
         <br />
         Test name: <input type="text" placeholder="Overall" value={testName} onChange={ev => { setTestName(ev.target.value); }} />
       </div>
-      {
-        mode === 'chart' ? <Chart data={data} /> :
-        mode === 'heatmap' ? <Heatmap data={data} /> :
-        <SippyTable data={data} columns={columns} filter={filter} sortBy={sortBy} periods={periods} testName={testName} />
-      }
+      {content}
     </div>
   );
 }

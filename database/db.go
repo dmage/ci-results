@@ -178,6 +178,7 @@ func (db *dbImpl) init() error {
 		`create unique index if not exists builds_job_number on builds (job_id, number);`,
 		`create unique index if not exists tests_name on tests (name);`,
 		`create unique index if not exists test_results_build_test on test_results (build_id, test_id);`,
+		`create        index if not exists test_results_test_id_status on test_results (test_id, status);`,
 	}
 	for _, stmt := range initStatements {
 		_, err := db.Exec(stmt)

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/dmage/ci-results/database"
@@ -54,6 +56,11 @@ func (opts *ServerOptions) Run(ctx context.Context) (err error) {
 	}()
 
 	opts.db = db
+
+	go func() {
+		time.Sleep(3 * time.Hour)
+		os.Exit(0) // Let's get restarted and get new data from TestGrid
+	}()
 
 	klog.Info("Starting the API server... http://localhost:8001")
 	return http.ListenAndServe(":8001", opts)
