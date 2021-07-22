@@ -206,30 +206,34 @@ function heatmapValue(x) {
   return x;
 }
 
-function Heatmap({ data }) {
+function Heatmap({ data, columns, filter, sortBy, periods, testName }) {
   if (data.length === 0) {
     return '';
   }
 
-  let columns = [];
+  let cols = [];
   for (let i = 0; i < data[0].values.length; i++) {
     let values = {x: -data[0].values.length + i + 1};
     data.forEach(row => {
       values[row.columns[0]] = Math.round(passRate(row.values[row.values.length - i - 1], NaN)*100);
     });
-    columns.push(values);
+    cols.push(values);
   }
 
   return (
     <table>
       <thead>
         <th>name</th>
-        {columns.map((col, i) => <th>{i - data[0].values.length + 1}</th>)}
+        {cols.map((col, i) => <th>{i - data[0].values.length + 1}</th>)}
       </thead>
       <tbody>
         {data.map(row => <tr>
-          <td>{row.columns[0]}</td>
-          {columns.map(col => <td className={'heatmap-cell heatmap-cell-' + heatmapColor(col[row.columns[0]])}>
+          <td>{
+            columns === 'sippytags' ? <Link to={'?columns=sippytags&filter=' + filter + (filter ? ' ' : '') + row.columns[0] + '&sortby=' + sortBy + '&periods=' + periods + '&testname=' + encodeURIComponent(testName) }>{row.columns[0]}</Link> :
+            columns === 'name,dashboard' ? <a target="_blank" rel="noreferrer" href={'https://testgrid.k8s.io/' + row.columns[1] + '#' + row.columns[0]}>{row.columns[0]}</a> :
+            row.columns[0]
+          }</td>
+          {cols.map(col => <td className={'heatmap-cell heatmap-cell-' + heatmapColor(col[row.columns[0]])}>
             {heatmapValue(col[row.columns[0]])}
           </td>)}
         </tr>)}
@@ -293,9 +297,9 @@ function Main(props) {
     if (mode === 'chart') {
       content = <Chart data={data} />;
     } else if (mode === 'heatmap') {
-      content = <Heatmap data={data} />;
+      content = <Heatmap data={data} columns={columns} filter={filter} sortBy={sortBy} periods={periodsParam} testName={testName} />;
     } else {
-      content = <SippyTable data={data} columns={columns} filter={filter} sortBy={sortBy} periods={periods} testName={testName} />;
+      content = <SippyTable data={data} columns={columns} filter={filter} sortBy={sortBy} periods={periodsParam} testName={testName} />;
     }
   }
 
