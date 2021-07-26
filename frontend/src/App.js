@@ -297,15 +297,21 @@ function Suggest({ placeholder, value, onChange }) {
     getItemProps,
   } = useCombobox({
     items: inputItems,
+    initialInputValue: value,
     onInputValueChange: ({ inputValue }) => {
       setCurrentInputValue(inputValue);
+      onChange({
+        target: {
+          value: inputValue,
+        }
+      });
     },
   });
 
   return (
     <div class="suggest">
       <div {...getComboboxProps()}>
-        <input type="text" placeholder={placeholder} value={value} onChange={onChange} {...getInputProps()} />
+        <input type="text" placeholder={placeholder} {...getInputProps()} />
       </div>
       {isOpen ?
         <ul {...getMenuProps()}>
