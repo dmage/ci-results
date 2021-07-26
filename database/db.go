@@ -63,6 +63,7 @@ type dbImpl struct {
 	selectBuildStmt      *sql.Stmt
 	insertBuildStmt      *sql.Stmt
 	selectTestStmt       *sql.Stmt
+	selectAllTestsStmt   *sql.Stmt
 	insertTestStmt       *sql.Stmt
 	selectTestResultStmt *sql.Stmt
 	insertTestResultStmt *sql.Stmt
@@ -218,6 +219,11 @@ func (db *dbImpl) initStmts() error {
 		return err
 	}
 
+	db.selectAllTestsStmt, err = db.Prepare("select name from tests")
+	if err != nil {
+		return err
+	}
+
 	db.insertTestStmt, err = db.Prepare("insert or ignore into tests (name) values (?)")
 	if err != nil {
 		return err
@@ -342,6 +348,22 @@ func (db *dbImpl) UpsertTest(name string) (int64, error) {
 	}
 	db.testsCache.Add(name, id)
 	return id, nil
+}
+
+func (db *dbImpl) ListTests() ([]string, error) {
+	results := []string{} // prefer to have an empty list intead of null in json
+	rows, err := db.selectAllTestsStmt.Query()
+	if err != nil {
+		return results, err
+	}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return results, err
+		}
+		results = append(results, name)
+	}
+	return results, nil
 }
 
 func (db *dbImpl) UpsertTestResult(buildID, testID int64, status testgrid.TestStatus) error {

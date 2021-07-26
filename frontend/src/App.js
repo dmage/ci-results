@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Route, Link, useLocation, useHistory } from 'react-router-dom';
+import { useCombobox } from 'downshift'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 import { randomColor } from 'randomcolor';
+import { go as fuzzysort } from 'fuzzysort';
 
 import './App.css';
 
@@ -255,6 +257,77 @@ function Heatmap({ data, passMode, columns, filter, sortBy, periods, testName })
   );
 }
 
+function filterTests(tests, inputValue) {
+  let result = fuzzysort(inputValue, tests, {
+    limit: 15,
+    allowTypo: true,
+  }).map(x => x.target);
+  console.log(result);
+  return result;
+}
+
+function Suggest({ placeholder, value, onChange }) {
+  const [tests, setTests] = useState([]);
+  const [currentInputValue, setCurrentInputValue] = useState('');
+  const [inputItems, setInputItems] = useState([]);
+
+  useEffect(() => {
+    fetch('/api/list-tests')
+      .then(response => {
+        if (response.status !== 200) {
+          throw new Error(response.statusText);
+        }
+        return response.json();
+      })
+      .then(data => {
+        setTests(data);
+      })
+  }, []);
+
+  useEffect(() => {
+    setInputItems(filterTests(tests, currentInputValue));
+  }, [tests, currentInputValue]);
+
+  const {
+    isOpen,
+    getMenuProps,
+    getInputProps,
+    getComboboxProps,
+    highlightedIndex,
+    getItemProps,
+  } = useCombobox({
+    items: inputItems,
+    onInputValueChange: ({ inputValue }) => {
+      setCurrentInputValue(inputValue);
+    },
+  });
+
+  return (
+    <div class="suggest">
+      <div {...getComboboxProps()}>
+        <input type="text" placeholder={placeholder} value={value} onChange={onChange} {...getInputProps()} />
+      </div>
+      {isOpen ?
+        <ul {...getMenuProps()}>
+          {inputItems.map((item, index) => (
+            <li
+              style={
+                highlightedIndex === index
+                  ? { backgroundColor: '#bde4ff' }
+                  : {}
+              }
+              key={`${item}${index}`}
+              {...getItemProps({ item, index })}
+            >
+              {item}
+            </li>
+          ))}
+        </ul> :
+        []}
+    </div>
+  );
+}
+
 function Main(props) {
   const [state, setState] = useState('loading');
   const [columns, setColumns] = useQueryParam('columns', 'sippytags');
@@ -346,7 +419,7 @@ function Main(props) {
           <option value="1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1:heatmap">heatmap</option>
         </select>
         <br />
-        Test name: <input type="text" placeholder="Overall" value={testName} onChange={ev => { setTestName(ev.target.value); }} />
+        Test name: <Suggest placeholder="Overall" value={testName} onChange={ev => { setTestName(ev.target.value); }} />
         <select value={passMode} onChange={ev => { setPassMode(ev.target.value); }}>
           <option value="success+flake">Successes + Flakes</option>
           <option value="success">Successes only</option>

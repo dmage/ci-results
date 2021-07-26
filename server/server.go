@@ -18,7 +18,7 @@ type ServerOptions struct {
 	db *database.DB
 }
 
-func (opts *ServerOptions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (opts *ServerOptions) ServeBuilds(w http.ResponseWriter, r *http.Request) {
 	columns := r.URL.Query().Get("columns")
 	if columns == "" {
 		columns = "sippytags"
@@ -41,6 +41,28 @@ func (opts *ServerOptions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Header.Add("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+func (opts *ServerOptions) ServeListTests(w http.ResponseWriter, r *http.Request) {
+	tests, err := opts.db.ListTests()
+	if err != nil {
+		klog.Info(err)
+		http.Error(w, "500 internal server error", 500)
+		return
+	}
+	r.Header.Add("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tests)
+}
+
+func (opts *ServerOptions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/api/builds":
+		opts.ServeBuilds(w, r)
+	case "/api/list-tests":
+		opts.ServeListTests(w, r)
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 func (opts *ServerOptions) Run(ctx context.Context) (err error) {

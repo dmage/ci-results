@@ -57,3 +57,31 @@ td.trend {
 .heatmap-cell-40 { background-color: #fc0; }
 .heatmap-cell-60 { background-color: #9c3; }
 .heatmap-cell-80 { background-color: #390; }
+
+.suggest {
+  display: inline-block;
+  position: relative;
+  width: 500px;
+  text-align: left;
+}
+
+.suggest input {
+  box-sizing: border-box;
+  width: 500px;
+}
+
+.suggest ul {
+  position: absolute;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 500px;
+  background: #fff;
+  border: 1px solid #000;
+  max-height: 300px;
+  overflow-y: scroll;
+}
+
+.suggest li {
+  padding: 5px 2px;
+}
