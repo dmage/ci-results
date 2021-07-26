@@ -6,26 +6,36 @@ import { randomColor } from 'randomcolor';
 import './App.css';
 
 function runs(x) {
-  return x.pass + x.fail;
+  return x.pass + x.flake + x.fail;
 }
 
-function passRate(x, fallback) {
-  const total = x.pass + x.fail;
+function passRate(x, passMode, fallback) {
+  const total = x.pass + x.flake + x.fail;
   if (total === 0) {
     return fallback;
   }
-  return x.pass/total;
+  if (passMode === 'success') {
+    return x.pass/total;
+  } else if (passMode === 'flake') {
+    return x.flake/total;
+  } else if (passMode === 'success+flake') {
+    return (x.pass + x.flake)/total;
+  }
+  return 0;
 }
 
-function passRateChange(x) {
-  const curr = passRate(x[0], 1), prev = passRate(x[1], 1);
+function passRateChange(x, passMode) {
+  const curr = passRate(x[0], passMode, 1), prev = passRate(x[1], passMode, 1);
   return curr - prev;
 }
 
-function jobState(x) {
-  const rate = passRate(x, -1);
+function jobState(x, passMode) {
+  let rate = passRate(x, passMode, -1);
   if (rate === -1) {
     return 'nodata';
+  }
+  if (passMode === 'flake') {
+    rate = 1 - rate;
   }
   if (rate === 0) {
     return 'permafail';
@@ -39,8 +49,8 @@ function jobState(x) {
   return 'green';
 }
 
-function PassRate({ jobValue }) {
-  const rate = passRate(jobValue, -1);
+function PassRate({ jobValue, passMode }) {
+  const rate = passRate(jobValue, passMode, -1);
   let value = 'n/a';
   if (rate !== -1) {
     value = (rate*100).toFixed(2) + '%';
@@ -50,8 +60,8 @@ function PassRate({ jobValue }) {
   );
 }
 
-function PassRateChange({ jobValues }) {
-  const curr = passRate(jobValues[0], -1), prev = passRate(jobValues[1], -1);
+function PassRateChange({ jobValues, passMode }) {
+  const curr = passRate(jobValues[0], passMode, -1), prev = passRate(jobValues[1], passMode, -1);
   let className, symbol;
   if (curr === -1 || prev === -1) {
     className = 'na';
@@ -60,10 +70,10 @@ function PassRateChange({ jobValues }) {
     className = 'neutral';
     symbol = '-';
   } else if (curr - prev < 0) {
-    className = 'negative';
+    className =  passMode === 'flake' ? 'positive' : 'negative';
     symbol = '⬇';
   } else {
-    className = 'positive';
+    className = passMode === 'flake' ? 'negative' : 'positive';
     symbol = '⬆';
   }
   return (
@@ -71,7 +81,7 @@ function PassRateChange({ jobValues }) {
   );
 }
 
-function getSortFunc(sortBy) {
+function getSortFunc(sortBy, passMode) {
   if (sortBy === 'name') {
     return (a, b) => {
       const aa = a.columns[0], bb = b.columns[0];
@@ -79,19 +89,19 @@ function getSortFunc(sortBy) {
     }
   } else if (sortBy === 'currentPassRate') {
     return (a, b) => {
-      return passRate(a.values[0], -1) - passRate(b.values[0], -1);
+      return passRate(a.values[0], passMode, -1) - passRate(b.values[0], passMode, -1);
     }
   } else if (sortBy === 'previousPassRate') {
     return (a, b) => {
-      return passRate(a.values[1], -1) - passRate(b.values[1], -1);
+      return passRate(a.values[1], passMode, -1) - passRate(b.values[1], passMode, -1);
     }
   } else if (sortBy === 'passRateChange') {
     return (a, b) => {
-      let c = passRateChange(a.values) - passRateChange(b.values);
+      let c = passRateChange(a.values, passMode) - passRateChange(b.values, passMode);
       if (c !== 0) {
         return c;
       }
-      return passRate(a.values[0], -1) - passRate(b.values[0], -1);
+      return passRate(a.values[0], passMode, -1) - passRate(b.values[0], passMode, -1);
     }
   }
 }
@@ -110,21 +120,21 @@ function useQueryParam(paramName, defaultValue) {
   }];
 }
 
-function SippyTable({ data, columns, filter, sortBy, periods, testName }) {
+function SippyTable({ data, passMode, columns, filter, sortBy, periods, testName }) {
   return (
     <table>
       <tbody>
         {data.map((row, i) => {
           return (
-            <tr key={i} className={'job-'+jobState(row.values[0])}>
+            <tr key={i} className={'job-'+jobState(row.values[0], passMode)}>
               <td>{
                 columns === 'sippytags' ? <Link to={'?columns=sippytags&filter=' + filter + (filter ? ' ' : '') + row.columns[0] + '&sortby=' + sortBy + '&periods=' + periods + '&testname=' + encodeURIComponent(testName) }>{row.columns[0]}</Link> :
                 columns === 'name,dashboard' ? <a target="_blank" rel="noreferrer" href={'https://testgrid.k8s.io/' + row.columns[1] + '#' + row.columns[0]}>{row.columns[0]}</a> :
                 row.columns[0]
               }</td>
-              <td><PassRate jobValue={row.values[0]} /></td>
-              <td className="trend"><PassRateChange jobValues={row.values} /></td>
-              <td><PassRate jobValue={row.values[1]} /></td>
+              <td><PassRate jobValue={row.values[0]} passMode={passMode} /></td>
+              <td className="trend"><PassRateChange jobValues={row.values} passMode={passMode} /></td>
+              <td><PassRate jobValue={row.values[1]} passMode={passMode} /></td>
             </tr>
           );
         })}
@@ -142,7 +152,7 @@ function mixColors(a, b, q) {
   return '#' + rr.toString(16).padStart(2, '0') + rg.toString(16).padStart(2, '0') + rb.toString(16).padStart(2, '0');
 }
 
-function Chart({ data }) {
+function Chart({ data, passMode }) {
   let [selected, setSelected] = useState('');
 
   if (data.length === 0) {
@@ -153,7 +163,7 @@ function Chart({ data }) {
   for (let i = 0; i < data[0].values.length; i++) {
     let values = {x: -data[0].values.length + i + 1};
     data.forEach(row => {
-      values[row.columns[0]] = Math.round(passRate(row.values[row.values.length - i - 1], NaN)*10000)/100;
+      values[row.columns[0]] = Math.round(passRate(row.values[row.values.length - i - 1], passMode, NaN)*10000)/100;
     });
     columns.push(values);
   }
@@ -180,9 +190,12 @@ function Chart({ data }) {
   );
 }
 
-function heatmapColor(x) {
+function heatmapColor(x, passMode) {
   if (isNaN(x)) {
     return 'nodata';
+  }
+  if (passMode === 'flake') {
+    x = 100 - x;
   }
   if (x === 0) {
     return 'zero';
@@ -206,7 +219,7 @@ function heatmapValue(x) {
   return x;
 }
 
-function Heatmap({ data, columns, filter, sortBy, periods, testName }) {
+function Heatmap({ data, passMode, columns, filter, sortBy, periods, testName }) {
   if (data.length === 0) {
     return '';
   }
@@ -215,7 +228,7 @@ function Heatmap({ data, columns, filter, sortBy, periods, testName }) {
   for (let i = 0; i < data[0].values.length; i++) {
     let values = {x: -data[0].values.length + i + 1};
     data.forEach(row => {
-      values[row.columns[0]] = Math.round(passRate(row.values[row.values.length - i - 1], NaN)*100);
+      values[row.columns[0]] = Math.round(passRate(row.values[row.values.length - i - 1], passMode, NaN)*100);
     });
     cols.push(values);
   }
@@ -233,7 +246,7 @@ function Heatmap({ data, columns, filter, sortBy, periods, testName }) {
             columns === 'name,dashboard' ? <a target="_blank" rel="noreferrer" href={'https://testgrid.k8s.io/' + row.columns[1] + '#' + row.columns[0]}>{row.columns[0]}</a> :
             row.columns[0]
           }</td>
-          {cols.map(col => <td className={'heatmap-cell heatmap-cell-' + heatmapColor(col[row.columns[0]])}>
+          {cols.map(col => <td className={'heatmap-cell heatmap-cell-' + heatmapColor(col[row.columns[0]], passMode)}>
             {heatmapValue(col[row.columns[0]])}
           </td>)}
         </tr>)}
@@ -249,6 +262,7 @@ function Main(props) {
   const [periodsParam, setPeriods] = useQueryParam('periods', '7,7');
   const [sortBy, setSortBy] = useQueryParam('sortby', 'currentPassRate');
   const [testName, setTestName] = useQueryParam('testname', '');
+  const [passMode, setPassMode] = useQueryParam('passmode', 'success+flake');
   const [rawData, setRawData] = useState([]);
   const [data, setData] = useState([]);
   const location = useLocation();
@@ -284,9 +298,9 @@ function Main(props) {
 
   useEffect(() => {
     let data = [...rawData];
-    data.sort(getSortFunc(sortBy));
+    data.sort(getSortFunc(sortBy, passMode));
     setData(data);
-  }, [rawData, sortBy]);
+  }, [rawData, passMode, sortBy]);
 
   let content = [];
   if (state === 'loading') {
@@ -295,11 +309,11 @@ function Main(props) {
     content = <div>Failed to load data: {state.slice('error:'.length)}; <a href={location.pathname + location.search}>reload</a></div>;
   } else if (state === 'loaded') {
     if (mode === 'chart') {
-      content = <Chart data={data} />;
+      content = <Chart data={data} passMode={passMode} />;
     } else if (mode === 'heatmap') {
-      content = <Heatmap data={data} columns={columns} filter={filter} sortBy={sortBy} periods={periodsParam} testName={testName} />;
+      content = <Heatmap data={data} passMode={passMode} columns={columns} filter={filter} sortBy={sortBy} periods={periodsParam} testName={testName} />;
     } else {
-      content = <SippyTable data={data} columns={columns} filter={filter} sortBy={sortBy} periods={periodsParam} testName={testName} />;
+      content = <SippyTable data={data} passMode={passMode} columns={columns} filter={filter} sortBy={sortBy} periods={periodsParam} testName={testName} />;
     }
   }
 
@@ -333,6 +347,11 @@ function Main(props) {
         </select>
         <br />
         Test name: <input type="text" placeholder="Overall" value={testName} onChange={ev => { setTestName(ev.target.value); }} />
+        <select value={passMode} onChange={ev => { setPassMode(ev.target.value); }}>
+          <option value="success+flake">Successes + Flakes</option>
+          <option value="success">Successes only</option>
+          <option value="flake">Flakes only</option>
+        </select>
       </div>
       {content}
     </div>

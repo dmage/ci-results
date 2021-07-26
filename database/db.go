@@ -357,8 +357,9 @@ func (db *dbImpl) UpsertTestResult(buildID, testID int64, status testgrid.TestSt
 }
 
 type StatsValues struct {
-	Pass int `json:"pass"`
-	Fail int `json:"fail"`
+	Pass  int `json:"pass"`
+	Flake int `json:"flake"`
+	Fail  int `json:"fail"`
 }
 
 type StatsRow struct {
@@ -635,9 +636,13 @@ func (db *dbImpl) BuildStats(columns string, filter string, periods string, test
 		}
 
 		if statusField == "tr.status" {
-			if status == int(testgrid.TestStatusPass) || status == int(testgrid.TestStatusPassWithSkips) || status == int(testgrid.TestStatusFlaky) {
+			if status == int(testgrid.TestStatusPass) || status == int(testgrid.TestStatusPassWithSkips) {
 				for i, p := range periodsPtrs {
 					row.Values[i].Pass += *p
+				}
+			} else if status == int(testgrid.TestStatusFlaky) {
+				for i, p := range periodsPtrs {
+					row.Values[i].Flake += *p
 				}
 			} else if status == int(testgrid.TestStatusFail) {
 				for i, p := range periodsPtrs {
